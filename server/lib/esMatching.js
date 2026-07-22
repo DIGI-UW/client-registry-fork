@@ -199,6 +199,11 @@ const getESDocument = (query, callback) => {
     .addQuery('size', 1000)
     .toString();
   let scroll_id = null;
+  // Track the most recent scroll id so we can DELETE the scroll context when done. Without this,
+  // every match leaks an open scroll context for its keep-alive (1m); a rapid batch load exhausts
+  // Elasticsearch's search.max_open_scroll_context (default 500) and all subsequent matches fail
+  // with HTTP 500 -> patients silently stop matching.
+  let lastScrollId = null;
   async.doWhilst(
     (callback) => {
       axios.post(url, query, {
@@ -209,6 +214,9 @@ const getESDocument = (query, callback) => {
       }).then((response) => {
         if(response.data.hits && response.data.hits.hits && Array.isArray(response.data.hits.hits)) {
           documents = documents.concat(response.data.hits.hits);
+        }
+        if(response.data._scroll_id) {
+          lastScrollId = response.data._scroll_id;
         }
         if(response.data.hits.hits.length === 0 || response.data.hits.total.value == documents.length || !response.data._scroll_id) {
           scroll_id = null;
@@ -242,7 +250,24 @@ const getESDocument = (query, callback) => {
       return callback(null, scroll_id !== null);
     },
     () => {
-      return callback(error, documents);
+      // Release the scroll context on ES (best-effort) before returning, so contexts don't
+      // accumulate to the max_open_scroll_context limit under batch load.
+      if(!lastScrollId) {
+        return callback(error, documents);
+      }
+      const clearUrl = URI(config.get('elastic:server')).segment('_search').segment('scroll').toString();
+      axios.delete(clearUrl, {
+        data: { scroll_id: [lastScrollId] },
+        auth: {
+          username: config.get("elastic:username"),
+          password: config.get("elastic.password"),
+        },
+      }).then(() => {
+        return callback(error, documents);
+      }).catch((err) => {
+        logger.warn('Failed to clear ES scroll context: ' + err.message);
+        return callback(error, documents);
+      });
     }
   );
 };
