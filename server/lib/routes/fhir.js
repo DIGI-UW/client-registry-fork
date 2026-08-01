@@ -136,10 +136,14 @@ function pixmRequest({
         if (isGoldenRec) {
           continue;
         }
+
         parameters.parameter.push({
           name: 'targetId',
-          valueReference: entry.resource.fullUrl
+          valueReference: {
+            reference: entry.fullUrl
+          }
         });
+
         for (const identifier of entry.resource.identifier) {
           if (targetSystem) {
             if (targetSystem === identifier.system) {
@@ -202,7 +206,7 @@ router.post('/', (req, res) => {
   async.parallel({
     otherResources: (callback) => {
       if(otherResources.entry.length === 0) {
-        return callback(null, {});
+        return callback(null, {code: 200});
       }
       fhirWrapper.create(otherResources, (code, err, response, body) => {
         return callback(null, {code, err, response, body});
@@ -210,7 +214,7 @@ router.post('/', (req, res) => {
     },
     patients: (callback) => {
       if(patients.length === 0) {
-        return callback(null, {});
+        return callback(null, {code: 200, responseBundle: {entry: []}, responseHeaders: {}, operationSummary: []});
       }
       let patientsBundle = {
         entry: patients
@@ -395,11 +399,32 @@ function saveResource(req, res) {
           }
         }
         if (error) {
-          res.status(500).json(filteredResponseBundle);
+          // Return a valid FHIR OperationOutcome, not the raw internal response array. A bare JSON
+          // array ([{...}]) has no resourceType, so every FHIR client (HAPI, the mpi-client) fails to
+          // parse it with "Content does not appear to be FHIR JSON, first non-whitespace character
+          // was: '['". Wrapping the detail in an OperationOutcome keeps the response parseable.
+          return res.status(500).json({
+            resourceType: "OperationOutcome",
+            issue: [{
+              severity: "error",
+              code: "processing",
+              diagnostics: "Error adding patient to the client registry"
+            }]
+          });
         } else {
-          let response = filteredResponseBundle.find((bnd) => {
-            return bnd.response.location.startsWith(responseHeaders.patientID[0]);
-          })?.response;
+          let matched = filteredResponseBundle.find((bnd) => {
+            return bnd.response && bnd.response.location && responseHeaders.patientID
+              && bnd.response.location.startsWith(responseHeaders.patientID[0]);
+          });
+          let response = matched && matched.response;
+          if (!response) {
+            // No response entry matched the created patient id: the write still succeeded upstream, so
+            // return the resource rather than crashing on response.status of undefined.
+            resource.id = responseHeaders.patientID ? responseHeaders.patientID[0] : resource.id;
+            if (responseHeaders.patientID) res.setHeader('Location', responseHeaders.patientID[0]);
+            if (responseHeaders.CRUID) res.setHeader('LocationCRUID', responseHeaders.CRUID[0]);
+            return res.status(200).json(resource);
+          }
           let status = response.status.split(" ")[0];
           resource.id = responseHeaders.patientID[0];
           if(!resource.meta) {
