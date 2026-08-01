@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "main"
+      - "develop"
   release:
   workflow_dispatch:
 
@@ -28,11 +29,17 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Branch pushes tag the image with the branch name (main -> :main, develop -> :develop);
+      # releases/tags add the version tag; every build also gets an immutable :sha-* tag.
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
 
       -
         name: Build and push
@@ -43,5 +50,5 @@ jobs:
           load: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{github.repository}}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
           cache-to: type=inline
