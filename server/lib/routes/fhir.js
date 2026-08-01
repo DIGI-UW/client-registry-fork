@@ -426,7 +426,9 @@ function saveResource(req, res) {
             return res.status(200).json(resource);
           }
           let status = response.status.split(" ")[0];
-          resource.id = responseHeaders.patientID[0];
+          // patientID header values are references ("Patient/<uuid>"); Resource.id must be the
+          // bare id, not a reference — clients otherwise see id = "Patient/<uuid>".
+          resource.id = responseHeaders.patientID[0].split('/').pop();
           if(!resource.meta) {
             resource.meta = {};
           }
