@@ -41,7 +41,11 @@ const buildQuery = (sourceResource, decisionRule) => {
     query: {
       bool: {}
     },
-    boost_mode: "sum",
+    // "replace": the final score is the similarity-plugin sum ALONE (one point per exact field,
+    // fractional for fuzzy). With "sum", the unbounded BM25 text-relevance score was added on top,
+    // so autoMatchThreshold was routinely exceeded by candidates failing required fields — observed
+    // live: given-name mismatches auto-linking into another person's golden record.
+    boost_mode: "replace",
     functions: [],
     min_score: decisionRule.potentialMatchThreshold
   };
