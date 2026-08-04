@@ -45,7 +45,10 @@ jobs:
         name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ./docker/opencr
+          # Repo root as context: the Dockerfile COPYs the checked-out tree instead of git-cloning
+          # inside a cacheable layer (which shipped stale main code under every tag).
+          context: .
+          file: ./docker/opencr/Dockerfile
           push: true
           load: false
           tags: ${{ steps.meta.outputs.tags }}
