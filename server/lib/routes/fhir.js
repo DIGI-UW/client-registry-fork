@@ -315,6 +315,32 @@ router.put('/:resourceType/:id', (req, res) => {
   saveResource(req, res);
 });
 
+/**
+ * Stamp the CRUID (golden record id) on the resource returned by a Patient create/update, as a
+ * meta.tag. The LocationCRUID response header already carries it, but FHIR clients (e.g. HAPI's
+ * IGenericClient in the OpenMRS mpi-client) parse the returned resource and cannot easily read
+ * custom headers — the tag makes the golden id consumable by any client, so a connected EMR can
+ * store it (ECID) straight from the save response instead of re-querying.
+ */
+function tagCruid(resource, responseHeaders) {
+  if (!responseHeaders || !responseHeaders.CRUID || !responseHeaders.CRUID[0]) {
+    return;
+  }
+  const cruid = responseHeaders.CRUID[0].split('/').pop();
+  if (!resource.meta) {
+    resource.meta = {};
+  }
+  if (!resource.meta.tag) {
+    resource.meta.tag = [];
+  }
+  resource.meta.tag = resource.meta.tag.filter((tag) => tag.system !== 'http://openclientregistry.org/fhir/cruid');
+  resource.meta.tag.push({
+    system: 'http://openclientregistry.org/fhir/cruid',
+    code: cruid,
+    display: 'Client Registry Unique ID (golden record)'
+  });
+}
+
 function saveResource(req, res) {
   let resource = req.body;
   let resourceType = req.params.resourceType;
@@ -423,6 +449,7 @@ function saveResource(req, res) {
             resource.id = responseHeaders.patientID ? responseHeaders.patientID[0] : resource.id;
             if (responseHeaders.patientID) res.setHeader('Location', responseHeaders.patientID[0]);
             if (responseHeaders.CRUID) res.setHeader('LocationCRUID', responseHeaders.CRUID[0]);
+            tagCruid(resource, responseHeaders);
             return res.status(200).json(resource);
           }
           let status = response.status.split(" ")[0];
@@ -439,6 +466,7 @@ function saveResource(req, res) {
           }
           res.setHeader('Location', responseHeaders.patientID[0]);
           res.setHeader('LocationCRUID', responseHeaders.CRUID[0]);
+          tagCruid(resource, responseHeaders);
           res.status(status).json(resource);
         }
 
