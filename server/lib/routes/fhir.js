@@ -407,7 +407,7 @@ function saveResource(req, res) {
       }, () => {
         logger.info('Audit saved successfully');
         let filteredResponseBundle = [];
-        logger.error(JSON.stringify(responseBundle, 0, 2));
+        logger.debug(JSON.stringify(responseBundle, 0, 2));
         for(let entry of responseBundle.entry) {
           let exists = filteredResponseBundle.findIndex((fil) => {
             return fil.response && entry.response && entry.response.location && fil.response.location.startsWith(entry.response.location.split('/_history')[0]);

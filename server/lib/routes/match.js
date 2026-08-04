@@ -1935,7 +1935,7 @@ router.post('/unbreak-match', (req, res) => {
           });
         });
       }
-      logger.error(JSON.stringify(auditBundle,0,2));
+      logger.debug(JSON.stringify(auditBundle,0,2));
     });
   } else {
     return res.status(400).json({
