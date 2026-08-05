@@ -70,9 +70,9 @@ module.exports = () => ({
             return callback(resourceData, 400);
           }
           url.addQuery(qrArr[0], qrArr[1]);
-          if (qrArr[0] === '_count') {
-            count = true;
-          }
+          // _count here is the page size, not a stopping condition: setting `count` would both
+          // halt the next-link loop after one page and make each page REPLACE the last.
+          // A caller wanting a bounded number of records passes the `count` argument instead.
         }
       }
       url = url.toString();
