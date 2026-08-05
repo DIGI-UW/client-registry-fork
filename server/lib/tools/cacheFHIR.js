@@ -538,13 +538,15 @@ const fhir2ES = ({
                   resourceData = resourceData.concat(patientsBundle.entry);
                   resolve();
                 } else {
+                  // Search, not _history: HAPI returns no `next` link on a history bundle, so
+                  // paging stopped at the server's default 20 records and the index silently
+                  // held a fraction of the registry. A search also yields current state only,
+                  // so superseded versions are no longer re-indexed on top of each other.
                   fhirWrapper.getResource({
                     resource: orderedResource.resource,
-                    extraPath: ['_history'],
-                    query: '_since=' + lastSync,
+                    query: '_lastUpdated=ge' + lastSync + '&_count=200',
                   }, data => {
                     if(data.entry) {
-                      data.entry = data.entry.reverse();
                       resourceData = resourceData.concat(data.entry);
                     }
                     resolve();
