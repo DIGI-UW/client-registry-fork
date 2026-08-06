@@ -1085,6 +1085,7 @@ router.get(`/count-new-auto-matches`, (req, res) => {
 
 router.post('/matches', async (req, res) => {
   logger.info("Received a request to get all matches");
+  const clientIDURI = URI(config.get("systems:CRBaseURI")).segment('clientid').toString();
   let matchResults = {
     parent: [],
     auto: [],
@@ -1155,17 +1156,15 @@ router.post('/matches', async (req, res) => {
       if(name && name.given) {
         given = name.given.join(' ');
       }
-      let clientUserId;
+      // A record carries one clientid tag per system that has contributed to it, so keeping only the
+      // last reported a single source and hid the facility on any record another system enriched.
+      let clientIds = [];
       if (patient.meta && patient.meta.tag) {
-        for (let tag of patient.meta.tag) {
-          if (
-            tag.system === "http://openclientregistry.org/fhir/clientid"
-          ) {
-            clientUserId = tag.code;
-          }
-        }
+        clientIds = patient.meta.tag.filter((tag) => {
+          return tag.system === clientIDURI;
+        }).map((tag) => tag.code);
       }
-      let systemName = generalMixin.getClientDisplayName(clientUserId);
+      let systemName = generalMixin.getClientDisplayName(clientIds[0]);
       let phone = '';
       if(patient.telecom) {
         for(let telecom of patient.telecom) {
@@ -1189,6 +1188,7 @@ router.post('/matches', async (req, res) => {
         ouid: goldenLink,
         source_id: validSystem && validSystem.value  ? validSystem.value : null,
         source: systemName ? systemName: null,
+        sources: clientIds,
         scores: {}
       };
 
@@ -1380,6 +1380,7 @@ async function transformToFhirObject() {
 
 router.get('/potential-matches/:id', (req, res) => {
   logger.info("Received a request to get potential matches");
+  const clientIDURI = URI(config.get("systems:CRBaseURI")).segment('clientid').toString();
   let matchResults = [];
   fhirWrapper.getResource({
     resource: 'Patient',
@@ -1436,17 +1437,15 @@ router.get('/potential-matches/:id', (req, res) => {
       if(name && name.given) {
         given = name.given.join(' ');
       }
-      let clientUserId;
+      // A record carries one clientid tag per system that has contributed to it, so keeping only the
+      // last reported a single source and hid the facility on any record another system enriched.
+      let clientIds = [];
       if (patient.meta && patient.meta.tag) {
-        for (let tag of patient.meta.tag) {
-          if (
-            tag.system === "http://openclientregistry.org/fhir/clientid"
-          ) {
-            clientUserId = tag.code;
-          }
-        }
+        clientIds = patient.meta.tag.filter((tag) => {
+          return tag.system === clientIDURI;
+        }).map((tag) => tag.code);
       }
-      let systemName = generalMixin.getClientDisplayName(clientUserId);
+      let systemName = generalMixin.getClientDisplayName(clientIds[0]);
       let phone = '';
       if(patient.telecom) {
         for(let telecom of patient.telecom) {
@@ -1470,6 +1469,7 @@ router.get('/potential-matches/:id', (req, res) => {
         ouid: goldenLink,
         source_id: validSystem.value,
         source: systemName,
+        sources: clientIds,
         scores: {}
       };
 
@@ -1617,7 +1617,9 @@ router.get(`/get-match-issues`, (req, res) => {
         sources: clientsTags.map((tag) => tag.code),
         source_id: validSystem.value,
         reason: matchTag.display,
-        reasonCode: matchTag.code
+        reasonCode: matchTag.code,
+        // the write that carried the flag; a FHIR tag has no timestamp of its own
+        date: entry.resource.meta.lastUpdated
       };
       reviews.push(review);
     }
@@ -1672,7 +1674,9 @@ router.get(`/get-new-auto-matches`, (req, res) => {
         sources: clientsTags.map((tag) => tag.code),
         source_id: validSystem.value,
         reason: matchTag.display,
-        reasonCode: matchTag.code
+        reasonCode: matchTag.code,
+        // the write that carried the flag; a FHIR tag has no timestamp of its own
+        date: entry.resource.meta.lastUpdated
       };
       reviews.push(review);
     }
