@@ -41,11 +41,12 @@ const buildQuery = (sourceResource, decisionRule) => {
     query: {
       bool: {}
     },
-    // "replace": the final score is the similarity-plugin sum ALONE (one point per exact field,
-    // fractional for fuzzy). With "sum", the unbounded BM25 text-relevance score was added on top,
-    // so autoMatchThreshold was routinely exceeded by candidates failing required fields — observed
-    // live: given-name mismatches auto-linking into another person's golden record.
-    boost_mode: "replace",
+    // How the decision-rule score combines with Elasticsearch's own BM25 relevance score.
+    // Defaults to "sum" (unchanged behaviour). Set matching:boostMode to "replace" to score on the
+    // similarity plugin alone: BM25 is unbounded and corpus-dependent, so under "sum" a candidate
+    // that fails a required field can still clear autoMatchThreshold on text relevance — observed
+    // live as a given-name mismatch auto-linking into another patient's golden record.
+    boost_mode: config.get('matching:boostMode') || "sum",
     functions: [],
     min_score: decisionRule.potentialMatchThreshold
   };
