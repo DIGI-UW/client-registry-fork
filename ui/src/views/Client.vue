@@ -585,19 +585,11 @@ export default {
                   let recordId, systemName, name, phone;
                   let clientUserId;
                   if (patient.meta && patient.meta.tag) {
-                    // A record can legitimately carry several clientid tags: any system that has
-                    // contributed to it. Assigning inside the loop kept only the last one, so a
-                    // record written by one system and later enriched by another appeared to have
-                    // come from the second alone.
-                    let systemNames = [];
-                    for (let tag of patient.meta.tag) {
-                      if (tag.system === "http://openclientregistry.org/fhir/clientid") {
-                        if (!clientUserId) clientUserId = tag.code;
-                        let label = tag.display || this.getClientDisplayName(tag.code) || tag.code;
-                        if (label && systemNames.indexOf(label) === -1) systemNames.push(label);
-                      }
-                    }
-                    systemName = systemNames.join(", ");
+                    let clientTag = patient.meta.tag.find((tag) => {
+                      return tag.system === "http://openclientregistry.org/fhir/clientid";
+                    });
+                    if (clientTag) clientUserId = clientTag.code;
+                    systemName = this.getSubmittingSystems(patient);
                   }
                   let identifiers = [];
                   if (patient.identifier) {
@@ -689,19 +681,11 @@ export default {
                   let recordId, systemName, name, phone;
                   let clientUserId;
                   if (patient.meta && patient.meta.tag) {
-                    // A record can legitimately carry several clientid tags: any system that has
-                    // contributed to it. Assigning inside the loop kept only the last one, so a
-                    // record written by one system and later enriched by another appeared to have
-                    // come from the second alone.
-                    let systemNames = [];
-                    for (let tag of patient.meta.tag) {
-                      if (tag.system === "http://openclientregistry.org/fhir/clientid") {
-                        if (!clientUserId) clientUserId = tag.code;
-                        let label = tag.display || this.getClientDisplayName(tag.code) || tag.code;
-                        if (label && systemNames.indexOf(label) === -1) systemNames.push(label);
-                      }
-                    }
-                    systemName = systemNames.join(", ");
+                    let clientTag = patient.meta.tag.find((tag) => {
+                      return tag.system === "http://openclientregistry.org/fhir/clientid";
+                    });
+                    if (clientTag) clientUserId = clientTag.code;
+                    systemName = this.getSubmittingSystems(patient);
                   }
                   let identifiers = [];
                   if (patient.identifier) {

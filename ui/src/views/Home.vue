@@ -257,17 +257,7 @@ export default {
               if (!nin) {
                 nin = {};
               }
-              let clientUserId;
-              if (entry.resource.meta && entry.resource.meta.tag) {
-                for (let tag of entry.resource.meta.tag) {
-                  if (
-                    tag.system === "http://openclientregistry.org/fhir/clientid"
-                  ) {
-                    clientUserId = tag.code;
-                  }
-                }
-              }
-              let systemName = this.getClientDisplayName(clientUserId);
+              let systemName = this.getSubmittingSystems(entry.resource);
               let patient = {
                 id: entry.resource.id,
                 pos: systemName

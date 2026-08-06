@@ -1600,9 +1600,12 @@ router.get(`/get-match-issues`, (req, res) => {
       let matchTag = entry.resource.meta.tag.find((tag) => {
         return tag.system === matchIssuesURI;
       });
-      let clientsTag = entry.resource.meta.tag.find((tag) => {
+      // A record carries one clientid tag per system that has contributed to it. Taking the first
+      // reported a single source, hiding the facility on any record a second system later enriched.
+      let clientsTags = entry.resource.meta.tag.filter((tag) => {
         return tag.system === clientIDURI;
       });
+      let clientsTag = clientsTags[0];
       let review = {
         id: entry.resource.id,
         gender: entry.resource.gender,
@@ -1611,6 +1614,7 @@ router.get(`/get-match-issues`, (req, res) => {
         birthDate: entry.resource.birthDate,
         uid: link,
         source: clientsTag.code,
+        sources: clientsTags.map((tag) => tag.code),
         source_id: validSystem.value,
         reason: matchTag.display,
         reasonCode: matchTag.code
@@ -1651,9 +1655,12 @@ router.get(`/get-new-auto-matches`, (req, res) => {
       let matchTag = entry.resource.meta.tag.find((tag) => {
         return tag.system === matchAutoURI;
       });
-      let clientsTag = entry.resource.meta.tag.find((tag) => {
+      // A record carries one clientid tag per system that has contributed to it. Taking the first
+      // reported a single source, hiding the facility on any record a second system later enriched.
+      let clientsTags = entry.resource.meta.tag.filter((tag) => {
         return tag.system === clientIDURI;
       });
+      let clientsTag = clientsTags[0];
       let review = {
         id: entry.resource.id,
         gender: entry.resource.gender,
@@ -1662,6 +1669,7 @@ router.get(`/get-new-auto-matches`, (req, res) => {
         birthDate: entry.resource.birthDate,
         uid: link,
         source: clientsTag.code,
+        sources: clientsTags.map((tag) => tag.code),
         source_id: validSystem.value,
         reason: matchTag.display,
         reasonCode: matchTag.code
