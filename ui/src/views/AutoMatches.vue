@@ -34,7 +34,7 @@
         <span class="text-uppercase">{{ item.reason }}</span>
       </template>
       <template v-slot:item.source="{ item }">
-        <span class="text-uppercase">{{ getClientDisplayName(item.source) }}</span>
+        <span class="text-uppercase">{{ getSubmittingSystems(item.sources || item.source) }}</span>
       </template>
       <template v-slot:item.date="{ item }">
         {{ item.date | moment("MMMM DD YYYY HH:mm:ssZ") }}

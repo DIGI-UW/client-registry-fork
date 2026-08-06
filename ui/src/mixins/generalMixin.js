@@ -15,6 +15,27 @@ export const generalMixin = {
         }
       })
     },
+    // Every system that has contributed to a record, not just one. OpenCR appends a clientid tag
+    // per contributing system, so a record created by a facility and later enriched by a batch feed
+    // carries both; showing one made the other invisible.
+    getSubmittingSystems(source) {
+      let codes = [];
+      if (Array.isArray(source)) {
+        codes = source;
+      } else if (source && source.meta && Array.isArray(source.meta.tag)) {
+        codes = source.meta.tag
+          .filter((tag) => tag.system === "http://openclientregistry.org/fhir/clientid")
+          .map((tag) => tag.code);
+      } else if (source) {
+        codes = [source];
+      }
+      let names = [];
+      for (let code of codes) {
+        let name = this.getClientDisplayName(code) || code;
+        if (name && names.indexOf(name) === -1) names.push(name);
+      }
+      return names.join(", ");
+    },
     getClientDisplayName(clientid) {
       let clientDet = this.$store.state.clients.find((client) => {
         return client.id === clientid
