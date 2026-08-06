@@ -132,6 +132,9 @@
                 dense
               ></v-select>
             </template>
+            <template v-slot:item.source="{ item }">
+              {{ getSubmittingSystems(item.sources || item.source) }}
+            </template>
             <template v-slot:item.source_id="{ item }">
               <a @click="goTo('client',{ clientId: item.uid, sourceId: item.source_id })">{{ item.source_id }}</a>
             </template>
@@ -185,7 +188,7 @@
             >
             <v-toolbar color="secondary" dark>
               <v-toolbar-title class="font-weight-bold">
-                Source: {{ data.source }} {{ data.source_id }}
+                Source: {{ getSubmittingSystems(data.sources || data.source) }} {{ data.source_id }}
               </v-toolbar-title>
               <v-spacer></v-spacer>
               <v-toolbar-items>
@@ -406,7 +409,7 @@ export default {
       for( let resolve of this.resolves ) {
         if ( firstTime ) {
           let scoreRow = {}
-          scoreRow.name = resolve.source+" "+resolve.source_id
+          scoreRow.name = this.getSubmittingSystems(resolve.sources || resolve.source)+" "+resolve.source_id
           this.score_headers.push( { text: scoreRow.name, value: resolve.source_id } )
           for( let score_id of Object.keys(resolve.scores) ) {
             resolve[score_id] = resolve.scores[score_id]
@@ -439,7 +442,10 @@ export default {
     },
     getSource: function(source_id) {
       const resolvedObject = this.resolves.find(resolve => resolve.source_id === source_id);
-      return resolvedObject ? resolvedObject.source : '';
+      if (!resolvedObject) {
+        return '';
+      }
+      return this.getSubmittingSystems(resolvedObject.sources || resolvedObject.source);
     },
     moveClient: function(val,item) {
       this.copyCohortInfo = { old_id: item.uid, new_id: val, item: item }
