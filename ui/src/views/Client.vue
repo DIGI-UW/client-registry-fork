@@ -501,6 +501,57 @@ export default {
     this.getAuditEvents();
   },
   methods: {
+    // FHIR value[x] can be any type. Reading only valueString/valueDate left every complex-valued
+    // extension -- patient-birthPlace carries a valueAddress -- rendering as a label with nothing
+    // after it, which reads as missing data rather than as unsupported rendering.
+    extensionValue(ext) {
+      if (!ext) return "";
+      if (ext.valueString !== undefined) return ext.valueString;
+      if (ext.valueDate !== undefined) return ext.valueDate;
+      if (ext.valueDateTime !== undefined) return ext.valueDateTime;
+      if (ext.valueBoolean !== undefined) return String(ext.valueBoolean);
+      if (ext.valueInteger !== undefined) return String(ext.valueInteger);
+      if (ext.valueDecimal !== undefined) return String(ext.valueDecimal);
+      if (ext.valueUri !== undefined) return ext.valueUri;
+      if (ext.valueCode !== undefined) return ext.valueCode;
+      if (ext.valueQuantity) {
+        return [ext.valueQuantity.value, ext.valueQuantity.unit].filter(Boolean).join(" ");
+      }
+      if (ext.valueCodeableConcept) {
+        let cc = ext.valueCodeableConcept;
+        if (cc.text) return cc.text;
+        let coding = (cc.coding || [])[0] || {};
+        return coding.display || coding.code || "";
+      }
+      if (ext.valueReference) {
+        return ext.valueReference.display || ext.valueReference.reference || "";
+      }
+      if (ext.valueAddress) return this.formatAddress(ext.valueAddress);
+      if (ext.valuePeriod) {
+        return [ext.valuePeriod.start, ext.valuePeriod.end].filter(Boolean).join(" - ");
+      }
+      // an extension carrying only nested extensions: summarise their values
+      if (ext.extension) {
+        return ext.extension.map((e) => this.extensionValue(e)).filter(Boolean).join(", ");
+      }
+      return "";
+    },
+    // Address, most specific part first, including the OpenMRS address1/2/3 sub-extension the
+    // Haiti hierarchy uses (locality, street, communal section).
+    formatAddress(addr) {
+      if (!addr) return "";
+      let parts = [];
+      for (let outer of addr.extension || []) {
+        for (let inner of outer.extension || []) {
+          if (inner.valueString) parts.push(inner.valueString);
+        }
+      }
+      (addr.line || []).forEach((l) => parts.push(l));
+      [addr.city, addr.district, addr.state, addr.postalCode, addr.country].forEach((p) => {
+        if (p) parts.push(p);
+      });
+      return parts.filter(Boolean).join(", ");
+    },
     getPatient() {
       this.breaks = [];
       this.match_items = [];
@@ -534,12 +585,19 @@ export default {
                   let recordId, systemName, name, phone;
                   let clientUserId;
                   if (patient.meta && patient.meta.tag) {
+                    // A record can legitimately carry several clientid tags: any system that has
+                    // contributed to it. Assigning inside the loop kept only the last one, so a
+                    // record written by one system and later enriched by another appeared to have
+                    // come from the second alone.
+                    let systemNames = [];
                     for (let tag of patient.meta.tag) {
                       if (tag.system === "http://openclientregistry.org/fhir/clientid") {
-                        clientUserId = tag.code;
-                        systemName = tag.display;
+                        if (!clientUserId) clientUserId = tag.code;
+                        let label = tag.display || this.getClientDisplayName(tag.code) || tag.code;
+                        if (label && systemNames.indexOf(label) === -1) systemNames.push(label);
                       }
                     }
+                    systemName = systemNames.join(", ");
                   }
                   let identifiers = [];
                   if (patient.identifier) {
@@ -631,12 +689,19 @@ export default {
                   let recordId, systemName, name, phone;
                   let clientUserId;
                   if (patient.meta && patient.meta.tag) {
+                    // A record can legitimately carry several clientid tags: any system that has
+                    // contributed to it. Assigning inside the loop kept only the last one, so a
+                    // record written by one system and later enriched by another appeared to have
+                    // come from the second alone.
+                    let systemNames = [];
                     for (let tag of patient.meta.tag) {
                       if (tag.system === "http://openclientregistry.org/fhir/clientid") {
-                        clientUserId = tag.code;
-                        systemName = tag.display;
+                        if (!clientUserId) clientUserId = tag.code;
+                        let label = tag.display || this.getClientDisplayName(tag.code) || tag.code;
+                        if (label && systemNames.indexOf(label) === -1) systemNames.push(label);
                       }
                     }
+                    systemName = systemNames.join(", ");
                   }
                   let identifiers = [];
                   if (patient.identifier) {
@@ -663,7 +728,7 @@ export default {
                     for (let id of patient.extension) {
                         extensions.push({
                           name: id.url,
-                          value: ( id.valueString ? id.valueString : id.valueDate )
+                          value: this.extensionValue(id)
                         });
                     }
                   }
