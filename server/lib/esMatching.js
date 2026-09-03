@@ -330,8 +330,15 @@ const performMatch = ({
             autoHits.push(hit);
           }
 
-          // take the one with the highest score
-          if (score > parseFloat(maxScore) || (!maxScore && score >= decisionRule.autoMatchThreshold)) {
+          // Take the one with the highest score, but only ever from the auto matches. Scores are
+          // not comparable across rules: a rule's score is its field count, so a one-field rule
+          // tops out at 1.0 while a four-field rule tops out at 4.0 and, because
+          // potentialMatchThreshold is applied as min_score, returns potential matches from 3.0 up.
+          // The previous condition had no threshold check after the first assignment, so a
+          // potential-only 3.0 hit outranked a perfect 1.0 auto match and resourceID ended up on a
+          // record that was never auto matched. goldenID below then stayed undefined and every
+          // genuine auto match was reclassified as a conflict.
+          if (score >= decisionRule.autoMatchThreshold && (!maxScore || score > parseFloat(maxScore))) {
             resourceID = id;
             maxScore = score;
           }
