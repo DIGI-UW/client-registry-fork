@@ -1275,6 +1275,7 @@ router.post('/matches', async (req, res) => {
           return entry.resource.id === autoMatch['_id'];
         });
         if(!patResource) {
+          logger.warn('Auto match ' + autoMatch['_id'] + ' is not in FHIRAutoMatched; omitting it from scores');
           continue;
         }
         const validSystem = generalMixin.getClientIdentifier(patResource.resource);
@@ -1548,6 +1549,7 @@ router.get('/potential-matches/:id', (req, res) => {
           return entry.resource.id === autoMatch['_id'];
         });
         if(!patResource) {
+          logger.warn('Auto match ' + autoMatch['_id'] + ' is not in FHIRAutoMatched; omitting it from scores');
           continue;
         }
         const validSystem = generalMixin.getClientIdentifier(patResource.resource);
