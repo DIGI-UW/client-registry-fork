@@ -332,13 +332,11 @@ const performMatch = ({
 
           // Take the highest scoring hit, considering only hits that clear their own rule's
           // autoMatchThreshold. Scores are not comparable across rules: a deterministic rule scores
-          // one point per matching field, so under matching:boostMode "replace" a one-field rule
-          // tops out at 1.0 while a four-field rule tops out at 4.0 and, because
-          // potentialMatchThreshold is applied as min_score, returns potential matches from 3.0 up
-          // (under the default "sum" the unbounded BM25 relevance is added on top of that, so the
-          // ceilings are higher still). Without the threshold check a potential-only hit from the
-          // wider rule wins resourceID, goldenID below is left unassigned, and genuine auto matches
-          // are reclassified as conflicts.
+          // one point per matching field, so a rule over more fields reaches higher scores than a
+          // narrower one, and its potential matches (potentialMatchThreshold is passed to
+          // Elasticsearch as min_score) can outscore the narrower rule's auto matches. Without the
+          // threshold check such a potential-only hit wins resourceID, goldenID below is left
+          // unassigned, and genuine auto matches are reclassified as conflicts.
           if (score >= decisionRule.autoMatchThreshold && (!maxScore || score > parseFloat(maxScore))) {
             resourceID = id;
             maxScore = score;
@@ -435,13 +433,14 @@ const performMatch = ({
       }, () => {
         if(resourceID) {
           // resourceID names an Elasticsearch document, and the index drifts from the FHIR server:
-          // cacheFHIR.fhir2ES only ever adds and updates documents, it never removes the ones whose
-          // patient has since been deleted. When the winning document has no patient behind it the
-          // _id search above returns nothing for it, goldenID below is never assigned, and every
+          // cacheFHIR.fhir2ES syncs from a _lastUpdated search, which returns current resources
+          // only, so a patient removed from FHIR outside OpenCR just stops appearing and its
+          // document is left behind. When the winning document has no patient behind it the _id
+          // search above returns nothing for it, goldenID below is never assigned, and every
           // genuine auto match silently becomes a conflict — the patient is flagged conflictMatches
           // and given a fresh golden record. Fall back to the highest scoring auto match that FHIR
-          // did return. Only auto matches are considered, so this cannot create a link that the
-          // decision rules did not already justify.
+          // did return; only hits that cleared their own rule's autoMatchThreshold are considered,
+          // so the substitute is itself an auto match.
           const resolvedWinner = fhirMatchResults.entry.find((entry) => {
             return entry.resource.id === resourceID;
           });
@@ -464,9 +463,9 @@ const performMatch = ({
               logger.warn('Elasticsearch returned ' + resourceID + ' but the FHIR server has no such patient (stale index) and no auto match resolved; treating as no match');
               // Clearing resourceID skips the block below, which is where auto hits the FHIR server
               // did not return are normally moved to conflicts. Do that move here instead, so
-              // autoMatchResults stops describing auto matches that have no entry in
-              // FHIRAutoMatched: consumers look each one up there and use the result (populateScores
-              // in lib/routes/match.js, the audit detail in lib/mixins/matchMixin.js).
+              // autoMatchResults stops reporting as auto matches patients that have no entry in
+              // FHIRAutoMatched — ESMatches is serialised verbatim into the AuditEvent detail by
+              // lib/mixins/matchMixin.js.
               for (const esmatched of ESMatches) {
                 esmatched.conflictsMatchResults = esmatched.conflictsMatchResults.concat(esmatched.autoMatchResults);
                 esmatched.autoMatchResults = [];
