@@ -153,6 +153,38 @@ describe( "Testing elasticsearch matching", () => {
     });
   });
 
+  test( "Testing A Stale Winner Falls Back To The Highest Scoring Live Auto Match", () => {
+    const patient3 = require("./FHIRResources/patient3.json");
+    const patient1AndLink = require("./FHIRResources/patient1andlinkAfterBrokenMatchWithoutRematch.json");
+    const patient2AndLink = require("./FHIRResources/patient2andlinkAfterBrokenMatchWithoutRematch.json");
+    const NARROW_RULE = [NARROW_AND_WIDE_RULES[0]];
+    config.set('rules', NARROW_RULE);
+
+    // all three hits clear the rule's autoMatchThreshold and the stale one outscores both live
+    // patients, so resourceID starts on a document the FHIR server no longer has a patient for.
+    // patient1 and patient2 hang off different golden records, so which one the fallback picks
+    // decides which golden record the submitted patient is matched into
+    axios.__setFhirResults(
+      `${ES_BASE_URL}/_search?scroll=1m&size=1000`,
+      buildQuery(patient3, NARROW_RULE[0]),
+      esResults([esHit(STALE_ID, 3.0), esHit(PATIENT1, 2.0), esHit(PATIENT2, 1.0)])
+    );
+
+    request.__setFhirResults(
+      `${FHIR_BASE_URL}/Patient?_id=${STALE_ID},${PATIENT1},${PATIENT2}&_include=Patient:link`,
+      null,
+      JSON.stringify({ entry: patient1AndLink.entry.concat(patient2AndLink.entry) })
+    );
+
+    return new Promise((resolve) => {
+      performMatch({ sourceResource: patient3, ignoreList: [PATIENT3] }, resolve);
+    }).then(({ FHIRAutoMatched, FHIRConflictsMatches, matchedGoldenRecords }) => {
+      expect(ids(FHIRAutoMatched)).toEqual([PATIENT1]);
+      expect(ids(FHIRConflictsMatches)).toEqual([PATIENT2]);
+      expect(ids(matchedGoldenRecords)).toEqual([PATIENT1_GOLDEN]);
+    });
+  });
+
   // the FHIR server no longer holds the patient the elasticsearch document points at
   function mockStaleIndex(patient3) {
     request.__setFhirResults(
