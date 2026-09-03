@@ -206,7 +206,7 @@ router.post('/resolve-match-issue', async(req, res) => {
               let needsResolving = true;
               let link;
               if(entry.resource.link) {
-                link = entry.resource.link[0].split('/')[1];
+                link = entry.resource.link[0].other.reference.split('/')[1];
               }
               if(resolvePatient.uid === link) {
                 needsResolving = false;
