@@ -335,8 +335,9 @@ const performMatch = ({
           // one point per matching field, so a rule over more fields reaches higher scores than a
           // narrower one, and its potential matches (potentialMatchThreshold is passed to
           // Elasticsearch as min_score) can outscore the narrower rule's auto matches. Without the
-          // threshold check such a potential-only hit wins resourceID, goldenID below is left
-          // unassigned, and genuine auto matches are reclassified as conflicts.
+          // threshold check such a hit wins resourceID on its potential-only score; where it also
+          // auto matched under the narrower rule, goldenID resolves to its golden record instead
+          // and the narrower rule's auto match is reclassified as a conflict.
           if (score >= decisionRule.autoMatchThreshold && (!maxScore || score > parseFloat(maxScore))) {
             resourceID = id;
             maxScore = score;
