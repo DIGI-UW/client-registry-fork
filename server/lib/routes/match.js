@@ -1274,6 +1274,9 @@ router.post('/matches', async (req, res) => {
         let patResource = FHIRAutoMatched.entry.find((entry) => {
           return entry.resource.id === autoMatch['_id'];
         });
+        if(!patResource) {
+          continue;
+        }
         const validSystem = generalMixin.getClientIdentifier(patResource.resource);
         patient.scores[validSystem.value] = autoMatch['_score'];
       }
@@ -1544,6 +1547,9 @@ router.get('/potential-matches/:id', (req, res) => {
         let patResource = FHIRAutoMatched.entry.find((entry) => {
           return entry.resource.id === autoMatch['_id'];
         });
+        if(!patResource) {
+          continue;
+        }
         const validSystem = generalMixin.getClientIdentifier(patResource.resource);
         patient.scores[validSystem.value] = autoMatch['_score'];
       }
