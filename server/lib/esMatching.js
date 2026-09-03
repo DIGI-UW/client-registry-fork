@@ -433,6 +433,39 @@ const performMatch = ({
         }
       }, () => {
         if(resourceID) {
+          // resourceID names an Elasticsearch document, and the index drifts from the FHIR server:
+          // cacheFHIR.fhir2ES only ever adds and updates documents, it never removes the ones whose
+          // patient has since been deleted. When the winning document has no patient behind it the
+          // _id search above returns nothing for it, goldenID below is never assigned, and every
+          // genuine auto match silently becomes a conflict — the patient is flagged conflictMatches
+          // and given a fresh golden record. Fall back to the highest scoring auto match that FHIR
+          // did return. Only auto matches are considered, so this cannot create a link that the
+          // decision rules did not already justify.
+          const resolvedWinner = fhirMatchResults.entry.find((entry) => {
+            return entry.resource.id === resourceID;
+          });
+          if (!resolvedWinner) {
+            let best;
+            for (const esmatched of ESMatches) {
+              for (const res of esmatched.autoMatchResults) {
+                const live = fhirMatchResults.entry.find((entry) => {
+                  return entry.resource.id === res['_id'];
+                });
+                if (live && (!best || parseFloat(res['_score']) > parseFloat(best.score))) {
+                  best = { id: res['_id'], score: res['_score'] };
+                }
+              }
+            }
+            if (best) {
+              logger.warn('Elasticsearch returned ' + resourceID + ' but the FHIR server has no such patient (stale index); falling back to auto match ' + best.id);
+              resourceID = best.id;
+            } else {
+              logger.warn('Elasticsearch returned ' + resourceID + ' but the FHIR server has no such patient (stale index) and no auto match resolved; treating as no match');
+              resourceID = undefined;
+            }
+          }
+        }
+        if(resourceID) {
           // get golden id of the resource that had higher score
           let goldenID;
           for (const entry of fhirMatchResults.entry) {
