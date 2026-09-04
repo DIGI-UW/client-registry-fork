@@ -76,9 +76,9 @@ const esSearchResults = (hits) => {
     }
   };
 };
-const tagCodesLastSavedOn = (id) => {
+const tagsLastSavedOn = (id) => {
   const saved = savedPatients.filter((resource) => resource.id === id).pop();
-  return saved.meta.tag.map((tag) => tag.code);
+  return saved.meta.tag.map((tag) => `${tag.system}|${tag.code}`);
 };
 
 beforeEach(() => {
@@ -356,9 +356,12 @@ describe( "Testing express", () => {
     return supertest(app)
       .post("/resolve-match-issue").send(resolveIssuesReqBundle).then( (response) => {
         expect(response.statusCode).toBe(200);
-        expect(tagCodesLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual(
-          ["openmrs", "autoMatches", "humanAdjudication", "conflictMatches"]
-        );
+        expect(tagsLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual([
+          "http://openclientregistry.org/fhir/clientid|openmrs",
+          "http://openclientregistry.org/fhir/automatch|autoMatches",
+          "http://openclientregistry.org/fhir/humanAdjudication|humanAdjudication",
+          "http://openclientregistry.org/fhir/matchIssues|conflictMatches"
+        ]);
     } );
   });
 
@@ -408,15 +411,17 @@ describe( "Testing express", () => {
     return supertest(app)
       .post("/resolve-match-issue").send(resolveIssuesReqBundle).then( (response) => {
         expect(response.statusCode).toBe(200);
-        expect(tagCodesLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual(
-          ["openmrs", "potentialMatches", "autoMatches", "conflictMatches"]
-        );
+        expect(tagsLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual([
+          "http://openclientregistry.org/fhir/clientid|openmrs",
+          "http://openclientregistry.org/fhir/matchIssues|potentialMatches",
+          "http://openclientregistry.org/fhir/automatch|autoMatches",
+          "http://openclientregistry.org/fhir/matchIssues|conflictMatches"
+        ]);
     } );
   });
 
   // Anything sitting in the match issues queue is already flagged, so the conflict that survives
-  // resolving must not add a second tag: the removal branch splices inside a for...in and would
-  // leave one copy behind, keeping the record in the queue.
+  // resolving must not add a second tag.
   test( "Testing Resolving Match Issues Does Not Repeat An Existing Conflict Flag", () => {
     const resolveIssuesReqBundle = require("./otherResources/requestResolveIssue.json");
     const allMatchIssuesWithLinks = JSON.parse(JSON.stringify(
@@ -454,9 +459,75 @@ describe( "Testing express", () => {
     return supertest(app)
       .post("/resolve-match-issue").send(resolveIssuesReqBundle).then( (response) => {
         expect(response.statusCode).toBe(200);
-        expect(tagCodesLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual(
-          ["openmrs", "conflictMatches", "autoMatches", "humanAdjudication"]
-        );
+        expect(tagsLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual([
+          "http://openclientregistry.org/fhir/clientid|openmrs",
+          "http://openclientregistry.org/fhir/matchIssues|conflictMatches",
+          "http://openclientregistry.org/fhir/automatch|autoMatches",
+          "http://openclientregistry.org/fhir/humanAdjudication|humanAdjudication"
+        ]);
+    } );
+  });
+
+  // The conflicts the length test reads are the reported conflicts and the auto matches together,
+  // minus everything now hanging off the CRUID the patient was moved to. Here every auto match sits
+  // on that CRUID and performMatch reports no conflict of its own, so the set empties and the flag
+  // comes off.
+  test( "Testing Resolving Match Issues Clears A Conflict Flag Once Every Auto Match Sits On The New CRUID", () => {
+    const resolveIssuesReqBundle = require("./otherResources/requestResolveIssue.json");
+    const allMatchIssuesWithLinks = JSON.parse(JSON.stringify(
+      require("./FHIRResources/allMatchIssuesWithLinks.json")
+    ));
+    const decisionRules = config.get("rules");
+    const newCRUID = "739d4023-40eb-4f44-8d14-3355926bd60d";
+    const resolvingFrom = allMatchIssuesWithLinks.entry.find((entry) => {
+      return entry.resource.id === "433ebeb6-1d89-4b64-97e6-a985675ca571";
+    }).resource;
+    resolvingFrom.meta.tag.push({
+      system: "http://openclientregistry.org/fhir/matchIssues",
+      code: "conflictMatches",
+      display: "Conflict On Match"
+    });
+    const linkedToNewCRUID = (id) => {
+      return {
+        search: { mode: "match" },
+        resource: {
+          resourceType: "Patient",
+          id,
+          meta: { tag: [] },
+          link: [{ other: { reference: `Patient/${newCRUID}` } }]
+        }
+      };
+    };
+
+    request.__setFhirResults( `${FHIR_BASE_URL}/Patient?_id=433ebeb6-1d89-4b64-97e6-a985675ca571,c49a52c1-88bc-41fb-9c87-bdd2a911f360,739d4023-40eb-4f44-8d14-3355926bd60d,bc58707b-62f1-498a-8fb3-568cd5b69db2,d55e15fd-d7a6-42b8-89cc-560e3578ef7f`, null, JSON.stringify(
+      allMatchIssuesWithLinks
+    ) );
+    axios.__setFhirResults(
+      `${ES_BASE_URL}/_search?scroll=1m&size=1000`,
+      buildQuery(resolvingFrom, decisionRules[0]),
+      esSearchResults([
+        esHit("bc58707b-62f1-498a-8fb3-568cd5b69db2", decisionRules[0].autoMatchThreshold),
+        esHit("d55e15fd-d7a6-42b8-89cc-560e3578ef7f", decisionRules[0].autoMatchThreshold)
+      ])
+    );
+    request.__setFhirResults(
+      `${FHIR_BASE_URL}/Patient?_id=bc58707b-62f1-498a-8fb3-568cd5b69db2,d55e15fd-d7a6-42b8-89cc-560e3578ef7f&_include=Patient:link`,
+      null,
+      JSON.stringify({ entry: [
+        linkedToNewCRUID("bc58707b-62f1-498a-8fb3-568cd5b69db2"),
+        linkedToNewCRUID("d55e15fd-d7a6-42b8-89cc-560e3578ef7f")
+      ] })
+    );
+
+    return supertest(app)
+      .post("/resolve-match-issue").send(resolveIssuesReqBundle).then( (response) => {
+        expect(response.statusCode).toBe(200);
+        expect(tagsLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual([
+          "http://openclientregistry.org/fhir/clientid|openmrs",
+          "http://openclientregistry.org/fhir/automatch|autoMatches",
+          "http://openclientregistry.org/fhir/humanAdjudication|humanAdjudication",
+          "http://openclientregistry.org/fhir/humanAdjudication|humanAdjudication"
+        ]);
     } );
   });
 } );
