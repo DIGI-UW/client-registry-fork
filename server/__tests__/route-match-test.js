@@ -522,6 +522,9 @@ describe( "Testing express", () => {
     return supertest(app)
       .post("/resolve-match-issue").send(resolveIssuesReqBundle).then( (response) => {
         expect(response.statusCode).toBe(200);
+        // humanAdjudication arrives twice because the potential and conflict handlers each splice
+        // and push against the same array. FHIR meta.tag is a set keyed by system and code, so a
+        // real server stores one; asserting the sent array keeps the mock honest about what is sent.
         expect(tagsLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual([
           "http://openclientregistry.org/fhir/clientid|openmrs",
           "http://openclientregistry.org/fhir/automatch|autoMatches",
