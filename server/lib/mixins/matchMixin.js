@@ -1350,7 +1350,9 @@ const reprocessPatients = () => {
       resource: 'Patient',
       query: '_tag=require-reprocess'
     }, (patients) => {
-      if(patients.entry.length === 0) {
+      // getResource hands back the raw body when it is not a Bundle, so an OperationOutcome from a
+      // failed search arrives here with no entry at all.
+      if(!patients.entry || patients.entry.length === 0) {
         return done();
       }
       async.eachSeries(patients.entry, (patient, nxtPatient) => {
