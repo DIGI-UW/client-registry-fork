@@ -16,9 +16,14 @@ const cacheFHIR = require('../tools/cacheFHIR');
 const logger = require('../winston');
 const config = require('../config');
 const matchAutoURI = URI("http://openclientregistry.org/fhir").segment('automatch').toString();
-const matchIssuesURI = URI("http://openclientregistry.org/fhir").segment('matchIssues').toString();
+// matchIssues and humanAdjudication are built from systems:CRBaseURI because lib/routes/match.js,
+// which writes both tags, builds them that way. Hardcoding them here meant the two files disagreed
+// on any deployment that changed CRBaseURI, so the tags were written under one system and looked
+// for under another. automatch and require-reprocess stay hardcoded: they are hardcoded on the
+// writing side too, so they agree today, and switching them would orphan existing tags.
+const matchIssuesURI = URI(config.get("systems:CRBaseURI")).segment('matchIssues').toString();
 const reprocessingURI = URI("http://openclientregistry.org/fhir").segment('require-reprocess').toString();
-const humanAdjudURI = URI("http://openclientregistry.org/fhir").segment('humanAdjudication').toString();
+const humanAdjudURI = URI(config.get("systems:CRBaseURI")).segment('humanAdjudication').toString();
 const processingPatients = [];
 let reprocessing_running = false;
 
