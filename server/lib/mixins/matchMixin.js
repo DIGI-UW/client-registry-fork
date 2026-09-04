@@ -1340,8 +1340,9 @@ const reprocessPatients = () => {
       return resolve();
     }
     reprocessing_running = true;
-    // Every exit path has to come through here. reprocessing_running gates the whole function, so
-    // any path that leaves it set disables reprocessing for the life of the process.
+    // The re-entrancy guard above resolves without this, deliberately: clearing the flag there would
+    // release the run already in flight. Past this point, a path that leaves the flag set disables
+    // reprocessing for the life of the process.
     const done = () => {
       reprocessing_running = false;
       return resolve();
@@ -1353,6 +1354,9 @@ const reprocessPatients = () => {
       // getResource hands back the raw body when it is not a Bundle, so an OperationOutcome from a
       // failed search arrives here with no entry at all.
       if(!patients.entry || patients.entry.length === 0) {
+        if(patients.resourceType === 'OperationOutcome') {
+          logger.error('Search for patients requiring reprocessing failed: ' + JSON.stringify(patients));
+        }
         return done();
       }
       async.eachSeries(patients.entry, (patient, nxtPatient) => {
