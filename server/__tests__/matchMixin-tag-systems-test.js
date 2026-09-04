@@ -84,6 +84,25 @@ describe('Testing tag systems shared with lib/routes/match.js', () => {
     })]));
   });
 
+  test('autoMatches tags stay under the hardcoded automatch system', async () => {
+    const autoMatch = {
+      resource: { resourceType: 'Patient', id: 'an-auto-match', link: [{ other: { reference: `Patient/${OTHER_GOLDEN_ID}` } }] }
+    };
+    await submit(searchResult([]), {
+      FHIRAutoMatched: { entry: [autoMatch] },
+      FHIRPotentialMatches: { entry: [] },
+      FHIRConflictsMatches: { entry: [] },
+      ESMatches: [],
+      matchedGoldenRecords: { entry: [_.cloneDeep(PATIENT3_AND_LINK.entry[1])] }
+    });
+
+    const tags = _.flatten(savedResources(SOURCE_ID).map((resource) => resource.meta.tag));
+    expect(tags).toEqual(expect.arrayContaining([expect.objectContaining({
+      system: 'http://openclientregistry.org/fhir/automatch',
+      code: 'autoMatches'
+    })]));
+  });
+
   test('a humanAdjudication tag under the configured CRBaseURI keeps the adjudicated link', async () => {
     const otherGolden = {
       resource: { resourceType: 'Patient', id: OTHER_GOLDEN_ID, link: [] }
