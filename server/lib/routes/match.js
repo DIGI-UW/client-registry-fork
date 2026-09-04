@@ -218,10 +218,10 @@ router.post('/resolve-match-issue', async(req, res) => {
               return needsResolving;
             });
 
-            // this checks those that has higher scores but are not linked to this patient.
-            // Concatenated, not assigned: this used to overwrite the filter above, so the
-            // resolved-conflict filtering never reached the entry.length test further down that
-            // decides whether the conflictMatches tag comes off.
+            // Auto matches hanging off a golden record other than the one this patient was just
+            // moved to are conflicts too, so they join the conflicts the filter above kept, and the
+            // entry.length test below decides on the whole set whether the conflictMatches tag
+            // comes off.
             FHIRConflictsMatches.entry = FHIRConflictsMatches.entry.concat(FHIRAutoMatched.entry.filter((entry) => {
               let needsResolving = true;
               let link;
@@ -431,7 +431,7 @@ router.post('/resolve-match-issue', async(req, res) => {
                     resolvePatientResource.resource.meta.tag = [];
                   }
                   let tagExist = resolvePatientResource.resource.meta.tag.find((tag) => {
-                    return tag.system === matchIssuesURI && tag.code === 'potentialMatches';
+                    return tag.system === matchIssuesURI && tag.code === 'conflictMatches';
                   });
                   if(!tagExist) {
                     resolvePatientResource.resource.meta.tag.push({

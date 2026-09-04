@@ -41,6 +41,50 @@ const MOCK_CREATE_RESPONSE = {
   ]
 };
 
+const savedPatients = [];
+beforeAll(() => {
+  const post = request.post;
+  request.post = (options, callback) => {
+    if(options.json && Array.isArray(options.json.entry)) {
+      for(const entry of options.json.entry) {
+        if(entry.resource && entry.resource.resourceType === "Patient") {
+          savedPatients.push(JSON.parse(JSON.stringify(entry.resource)));
+        }
+      }
+    }
+    return post(options, callback);
+  };
+});
+
+const esHit = (id, score) => {
+  return {
+    _index: "patients",
+    _type: "_doc",
+    _id: id,
+    _score: score,
+    _source: { patients: `Patient/${id}` }
+  };
+};
+const esSearchResults = (hits) => {
+  return {
+    took: 0,
+    timed_out: false,
+    hits: {
+      total: { value: hits.length, relation: "eq" },
+      max_score: Math.max(...hits.map((hit) => hit._score)),
+      hits
+    }
+  };
+};
+const tagCodesLastSavedOn = (id) => {
+  const saved = savedPatients.filter((resource) => resource.id === id).pop();
+  return saved.meta.tag.map((tag) => tag.code);
+};
+
+beforeEach(() => {
+  savedPatients.length = 0;
+});
+
 describe( "Testing express", () => {
   test( "Testing Breaking Matches", () => {
     const ids = [ 'Patient/d55e15fd-d7a6-42b8-89cc-560e3578ef7f' ];
@@ -290,34 +334,16 @@ describe( "Testing express", () => {
     const resolvingFrom = allMatchIssuesWithLinks.entry.find((entry) => {
       return entry.resource.id === "433ebeb6-1d89-4b64-97e6-a985675ca571";
     }).resource;
-    const autoHit = (id) => {
-      return {
-        _index: "patients",
-        _type: "_doc",
-        _id: id,
-        _score: decisionRules[0].autoMatchThreshold,
-        _source: { patients: `Patient/${id}` }
-      };
-    };
-
     request.__setFhirResults( `${FHIR_BASE_URL}/Patient?_id=433ebeb6-1d89-4b64-97e6-a985675ca571,c49a52c1-88bc-41fb-9c87-bdd2a911f360,739d4023-40eb-4f44-8d14-3355926bd60d,bc58707b-62f1-498a-8fb3-568cd5b69db2,d55e15fd-d7a6-42b8-89cc-560e3578ef7f`, null, JSON.stringify(
       allMatchIssuesWithLinks
     ) );
     axios.__setFhirResults(
       `${ES_BASE_URL}/_search?scroll=1m&size=1000`,
       buildQuery(resolvingFrom, decisionRules[0]),
-      {
-        took: 0,
-        timed_out: false,
-        hits: {
-          total: { value: 2, relation: "eq" },
-          max_score: decisionRules[0].autoMatchThreshold,
-          hits: [
-            autoHit("bc58707b-62f1-498a-8fb3-568cd5b69db2"),
-            autoHit("d55e15fd-d7a6-42b8-89cc-560e3578ef7f")
-          ]
-        }
-      }
+      esSearchResults([
+        esHit("bc58707b-62f1-498a-8fb3-568cd5b69db2", decisionRules[0].autoMatchThreshold),
+        esHit("d55e15fd-d7a6-42b8-89cc-560e3578ef7f", decisionRules[0].autoMatchThreshold)
+      ])
     );
     // bc58707b hangs off golden 739d4023 and d55e15fd off golden 42184bd9, so whichever loses
     // resourceID lands in FHIRConflictsMatches
@@ -330,6 +356,107 @@ describe( "Testing express", () => {
     return supertest(app)
       .post("/resolve-match-issue").send(resolveIssuesReqBundle).then( (response) => {
         expect(response.statusCode).toBe(200);
+        expect(tagCodesLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual(
+          ["openmrs", "autoMatches", "humanAdjudication", "conflictMatches"]
+        );
+    } );
+  });
+
+  // Both flags can be outstanding at once, and the two async.parallel handlers write the same tag
+  // array, so the conflict handler has to recognise its own tag rather than whatever the potential
+  // handler left behind.
+  test( "Testing Resolving Match Issues Flags A Conflict While A Potential Match Remains", () => {
+    const resolveIssuesReqBundle = require("./otherResources/requestResolveIssue.json");
+    const allMatchIssuesWithLinks = require("./FHIRResources/allMatchIssuesWithLinks.json");
+    const patient1AndLink = require("./FHIRResources/patient1andlinkAfterBrokenMatchWithoutRematch.json");
+    const patient2AndLink = require("./FHIRResources/patient2andlinkAfterBrokenMatchWithoutRematch.json");
+    const decisionRules = config.get("rules");
+    const resolvingFrom = allMatchIssuesWithLinks.entry.find((entry) => {
+      return entry.resource.id === "433ebeb6-1d89-4b64-97e6-a985675ca571";
+    }).resource;
+    const potentialId = "a0b1c2d3-5b1e-4a17-9f0c-8e4d2f6a1b90";
+
+    request.__setFhirResults( `${FHIR_BASE_URL}/Patient?_id=433ebeb6-1d89-4b64-97e6-a985675ca571,c49a52c1-88bc-41fb-9c87-bdd2a911f360,739d4023-40eb-4f44-8d14-3355926bd60d,bc58707b-62f1-498a-8fb3-568cd5b69db2,d55e15fd-d7a6-42b8-89cc-560e3578ef7f`, null, JSON.stringify(
+      allMatchIssuesWithLinks
+    ) );
+    axios.__setFhirResults(
+      `${ES_BASE_URL}/_search?scroll=1m&size=1000`,
+      buildQuery(resolvingFrom, decisionRules[0]),
+      esSearchResults([
+        esHit("bc58707b-62f1-498a-8fb3-568cd5b69db2", decisionRules[0].autoMatchThreshold),
+        esHit("d55e15fd-d7a6-42b8-89cc-560e3578ef7f", decisionRules[0].autoMatchThreshold),
+        esHit(potentialId, decisionRules[0].potentialMatchThreshold)
+      ])
+    );
+    request.__setFhirResults(
+      `${FHIR_BASE_URL}/Patient?_id=bc58707b-62f1-498a-8fb3-568cd5b69db2,d55e15fd-d7a6-42b8-89cc-560e3578ef7f&_include=Patient:link`,
+      null,
+      JSON.stringify({ entry: patient1AndLink.entry.concat(patient2AndLink.entry) })
+    );
+    // linked to a third golden record, so it is not promoted into the auto matches
+    request.__setFhirResults(
+      `${FHIR_BASE_URL}/Patient?_id=${potentialId}`,
+      null,
+      JSON.stringify({ entry: [{ resource: {
+        resourceType: "Patient",
+        id: potentialId,
+        meta: { tag: [] },
+        link: [{ other: { reference: "Patient/42184bd9-1c0c-41ce-9188-f57341ca9e88" } }]
+      } }] })
+    );
+
+    return supertest(app)
+      .post("/resolve-match-issue").send(resolveIssuesReqBundle).then( (response) => {
+        expect(response.statusCode).toBe(200);
+        expect(tagCodesLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual(
+          ["openmrs", "potentialMatches", "autoMatches", "conflictMatches"]
+        );
+    } );
+  });
+
+  // Anything sitting in the match issues queue is already flagged, so the conflict that survives
+  // resolving must not add a second tag: the removal branch splices inside a for...in and would
+  // leave one copy behind, keeping the record in the queue.
+  test( "Testing Resolving Match Issues Does Not Repeat An Existing Conflict Flag", () => {
+    const resolveIssuesReqBundle = require("./otherResources/requestResolveIssue.json");
+    const allMatchIssuesWithLinks = JSON.parse(JSON.stringify(
+      require("./FHIRResources/allMatchIssuesWithLinks.json")
+    ));
+    const patient1AndLink = require("./FHIRResources/patient1andlinkAfterBrokenMatchWithoutRematch.json");
+    const patient2AndLink = require("./FHIRResources/patient2andlinkAfterBrokenMatchWithoutRematch.json");
+    const decisionRules = config.get("rules");
+    const resolvingFrom = allMatchIssuesWithLinks.entry.find((entry) => {
+      return entry.resource.id === "433ebeb6-1d89-4b64-97e6-a985675ca571";
+    }).resource;
+    resolvingFrom.meta.tag.push({
+      system: "http://openclientregistry.org/fhir/matchIssues",
+      code: "conflictMatches",
+      display: "Conflict On Match"
+    });
+
+    request.__setFhirResults( `${FHIR_BASE_URL}/Patient?_id=433ebeb6-1d89-4b64-97e6-a985675ca571,c49a52c1-88bc-41fb-9c87-bdd2a911f360,739d4023-40eb-4f44-8d14-3355926bd60d,bc58707b-62f1-498a-8fb3-568cd5b69db2,d55e15fd-d7a6-42b8-89cc-560e3578ef7f`, null, JSON.stringify(
+      allMatchIssuesWithLinks
+    ) );
+    axios.__setFhirResults(
+      `${ES_BASE_URL}/_search?scroll=1m&size=1000`,
+      buildQuery(resolvingFrom, decisionRules[0]),
+      esSearchResults([
+        esHit("bc58707b-62f1-498a-8fb3-568cd5b69db2", decisionRules[0].autoMatchThreshold),
+        esHit("d55e15fd-d7a6-42b8-89cc-560e3578ef7f", decisionRules[0].autoMatchThreshold)
+      ])
+    );
+    request.__setFhirResults(
+      `${FHIR_BASE_URL}/Patient?_id=bc58707b-62f1-498a-8fb3-568cd5b69db2,d55e15fd-d7a6-42b8-89cc-560e3578ef7f&_include=Patient:link`,
+      null,
+      JSON.stringify({ entry: patient1AndLink.entry.concat(patient2AndLink.entry) })
+    );
+
+    return supertest(app)
+      .post("/resolve-match-issue").send(resolveIssuesReqBundle).then( (response) => {
+        expect(response.statusCode).toBe(200);
+        expect(tagCodesLastSavedOn("433ebeb6-1d89-4b64-97e6-a985675ca571")).toEqual(
+          ["openmrs", "conflictMatches", "autoMatches", "humanAdjudication"]
+        );
     } );
   });
 } );
