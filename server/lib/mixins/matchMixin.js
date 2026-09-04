@@ -1335,24 +1335,31 @@ const addPatient = (clientID, patientsBundle, callback) => {
 };
 
 const reprocessPatients = () => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if(reprocessing_running) {
       return resolve();
     }
     reprocessing_running = true;
+    // Every exit path has to come through here. reprocessing_running gates the whole function, so
+    // any path that leaves it set disables reprocessing for the life of the process.
+    const done = () => {
+      reprocessing_running = false;
+      return resolve();
+    };
     fhirWrapper.getResource({
       resource: 'Patient',
       query: '_tag=require-reprocess'
     }, (patients) => {
       if(patients.entry.length === 0) {
-        return resolve();
+        return done();
       }
       async.eachSeries(patients.entry, (patient, nxtPatient) => {
         let client = patient.resource.meta && patient.resource.meta.tag && patient.resource.meta.tag.find((tag) => {
           return tag.system === 'http://openclientregistry.org/fhir/clientid';
         });
         if(!client) {
-          return reject();
+          logger.error('Patient ' + patient.resource.id + ' is tagged require-reprocess but has no clientid tag, skipping it');
+          return nxtPatient();
         }
         addPatient(client.code, {entry: [patient]}, (err) => {
           if(!err) {
@@ -1377,9 +1384,7 @@ const reprocessPatients = () => {
           }
           return nxtPatient();
         });
-      }, () => {
-        reprocessing_running = false;
-      });
+      }, done);
     });
   });
 };
