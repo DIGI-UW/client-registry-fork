@@ -153,6 +153,42 @@ describe( "Testing elasticsearch matching", () => {
     });
   });
 
+  // Rule order states which rule decides. A narrow rule auto matching on a strong identifier scores
+  // below a wide demographic rule, so leaving it to the score hands the CRUID to the demographic
+  // match and reclassifies the identifier match as a conflict.
+  test( "Testing The First Rule To Auto Match Decides, Not The Highest Score", () => {
+    const patient3 = require("./FHIRResources/patient3.json");
+    const patient1AndLink = require("./FHIRResources/patient1andlinkAfterBrokenMatchWithoutRematch.json");
+    const patient2AndLink = require("./FHIRResources/patient2andlinkAfterBrokenMatchWithoutRematch.json");
+    config.set('rules', NARROW_AND_WIDE_RULES);
+
+    // patient1 auto matches the narrow rule at its ceiling of 1.0; patient2 auto matches the wide
+    // rule at 4.0. They hang off different golden records, so whichever wins takes the CRUID.
+    axios.__setFhirResults(
+      `${ES_BASE_URL}/_search?scroll=1m&size=1000`,
+      buildQuery(patient3, NARROW_AND_WIDE_RULES[0]),
+      esResults([esHit(PATIENT1, 1.0)])
+    );
+    axios.__setFhirResults(
+      `${ES_BASE_URL}/_search?scroll=1m&size=1000`,
+      buildQuery(patient3, NARROW_AND_WIDE_RULES[1]),
+      esResults([esHit(PATIENT2, 4.0)])
+    );
+    request.__setFhirResults(
+      `${FHIR_BASE_URL}/Patient?_id=${PATIENT1},${PATIENT2}&_include=Patient:link`,
+      null,
+      JSON.stringify({ entry: patient1AndLink.entry.concat(patient2AndLink.entry) })
+    );
+
+    return new Promise((resolve) => {
+      performMatch({ sourceResource: patient3, ignoreList: [PATIENT3] }, resolve);
+    }).then(({ FHIRAutoMatched, FHIRConflictsMatches, matchedGoldenRecords }) => {
+      expect(ids(FHIRAutoMatched)).toEqual([PATIENT1]);
+      expect(ids(FHIRConflictsMatches)).toEqual([PATIENT2]);
+      expect(ids(matchedGoldenRecords)).toEqual([PATIENT1_GOLDEN]);
+    });
+  });
+
   test( "Testing A Stale Winner Falls Back To The Highest Scoring Live Auto Match", () => {
     const patient3 = require("./FHIRResources/patient3.json");
     const patient1AndLink = require("./FHIRResources/patient1andlinkAfterBrokenMatchWithoutRematch.json");
