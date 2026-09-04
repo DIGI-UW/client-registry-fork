@@ -204,6 +204,47 @@ describe( "Testing elasticsearch matching", () => {
     );
   }
 
+  // A record can end up carrying the same identifier twice. buildQuery joins a field's values, so
+  // the query asked for "HT-1 HT-1" and rule 1 stopped matching on a code the record really holds.
+  test( "Testing A Repeated Identifier Still Queries For The Single Value", () => {
+    const patient3 = require("./FHIRResources/patient3.json");
+    const doubled = JSON.parse(JSON.stringify(patient3));
+    const biometric = { system: "http://isanteplus.org/openmrs/fhir2/6-biometrics-national-reference-code", value: "HT-90000458" };
+    doubled.identifier = (doubled.identifier || []).concat([biometric, biometric]);
+    const rule = {
+      matchingType: "deterministic",
+      fields: {
+        biometric: {
+          algorithm: "exact",
+          fhirpath: "identifier.where(system='http://isanteplus.org/openmrs/fhir2/6-biometrics-national-reference-code').value",
+          espath: "biometric"
+        }
+      },
+      potentialMatchThreshold: 1,
+      autoMatchThreshold: 1
+    };
+
+    const matcher = buildQuery(doubled, rule).query.function_score.functions[0].script_score.script.params.matchers[0];
+    expect(matcher.value).toBe("HT-90000458");
+    // and the query is the one a record carrying it once would produce
+    const once = JSON.parse(JSON.stringify(patient3));
+    once.identifier = (once.identifier || []).concat([biometric]);
+    expect(buildQuery(doubled, rule)).toEqual(buildQuery(once, rule));
+  });
+
+  // Distinct values still join: a compound given name is one field with two words.
+  test( "Testing Distinct Values Are Still Joined", () => {
+    const patient = { resourceType: "Patient", name: [{ use: "official", given: ["Jean", "Pierre"], family: "Joshua" }] };
+    const rule = {
+      matchingType: "deterministic",
+      fields: { given: { algorithm: "exact", fhirpath: "name.where(use='official').given", espath: "given" } },
+      potentialMatchThreshold: 1,
+      autoMatchThreshold: 1
+    };
+    const matcher = buildQuery(patient, rule).query.function_score.functions[0].script_score.script.params.matchers[0];
+    expect(matcher.value).toBe("Jean Pierre");
+  });
+
   test( "Testing A Stale Elasticsearch Document Is Reclassified As A Conflict", () => {
     const patient3 = require("./FHIRResources/patient3.json");
     mockStaleIndex(patient3);

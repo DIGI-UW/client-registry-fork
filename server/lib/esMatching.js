@@ -100,7 +100,10 @@ const buildQuery = (sourceResource, decisionRule) => {
       }
       values.push(pathValue);
     }
-    const value = values.join(" ");
+    // Repeated values are dropped before joining. A fhirpath that resolves to the same value twice
+    // is the same fact stated twice - joining them produces "X X", which matches nothing. Distinct
+    // values are still joined: a compound given name has to stay "Jean Pierre".
+    const value = [...new Set(values)].join(" ");
     if (rule.algorithm === 'phonetic' && decisionRule.matchingType === 'probabilistic') {
       logger.error('Phonetic is not supported for probabilistic matching, use it for deterministic matching only. Aborting matching process');
       return {};

@@ -1199,7 +1199,7 @@ const addPatient = (clientID, patientsBundle, callback) => {
             if(!adjudTag || (adjudTag && autoMatchPatientWithHumanAdjudTag)) {
               delete existingPatient.resource.link;
             }
-            existingPatient.resource = _.merge(existingPatient.resource, newPatient.resource);
+            existingPatient.resource = applySubmittedResource(existingPatient.resource, newPatient.resource);
             existingPatient.resource.id = id;
             bundle.entry.push({
               resource: existingPatient.resource,
@@ -1339,6 +1339,26 @@ const addPatient = (clientID, patientsBundle, callback) => {
   });
 };
 
+/**
+ * Applies a submitted patient over the stored one.
+ *
+ * Arrays come from the submission whole rather than being merged element by element. _.merge pairs
+ * array entries by position, so a submission carrying fewer identifiers than are stored overwrites
+ * the first few in place and leaves the rest behind: four stored identifiers and an incoming two
+ * came back as two overwritten and two duplicated, losing the iSantePlus id and the code national
+ * and repeating the biometric code. The duplicate then defeats matching, because buildQuery joins a
+ * field's values and "HT-1 HT-1" matches nothing.
+ *
+ * Arrays the submission omits are still kept: the customizer only answers for the ones it provides.
+ */
+const applySubmittedResource = (storedResource, submittedResource) => {
+  return _.mergeWith(storedResource, submittedResource, (storedValue, submittedValue) => {
+    if (Array.isArray(submittedValue)) {
+      return submittedValue;
+    }
+  });
+};
+
 const reprocessPatients = () => {
   return new Promise((resolve) => {
     if(reprocessing_running) {
@@ -1474,6 +1494,7 @@ const processCSVTag = (patient) => {
 
 module.exports = {
   addPatient,
+  applySubmittedResource,
   reprocessPatients,
   createAddPatientAudEvent,
   createCSVUploadAudEvent,
