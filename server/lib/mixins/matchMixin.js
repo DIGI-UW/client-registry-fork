@@ -15,9 +15,11 @@ const esMatching = require('../esMatching');
 const cacheFHIR = require('../tools/cacheFHIR');
 const logger = require('../winston');
 const config = require('../config');
-// The asymmetry here is deliberate. matchIssues and humanAdjudication follow lib/routes/match.js,
-// which builds them from systems:CRBaseURI; automatch and require-reprocess are hardcoded
-// everywhere they are written, so hardcoding them here is what keeps the two sides agreeing.
+// matchIssues and humanAdjudication are built from systems:CRBaseURI here and in lib/routes/match.js,
+// which is what keeps the two files agreeing. Do not move automatch or require-reprocess to CRBaseURI
+// for consistency: match.js hardcodes automatch too and would go on reading and _tag=-querying the
+// default, never seeing what this file writes; require-reprocess is only written here, its readers
+// matching on code alone.
 const matchAutoURI = URI("http://openclientregistry.org/fhir").segment('automatch').toString();
 const matchIssuesURI = URI(config.get("systems:CRBaseURI")).segment('matchIssues').toString();
 const reprocessingURI = URI("http://openclientregistry.org/fhir").segment('require-reprocess').toString();
