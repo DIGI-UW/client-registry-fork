@@ -202,7 +202,11 @@ router.post('/resolve-match-issue', async(req, res) => {
             FHIRConflictsMatches
           }) => {
             // remove any resolved conflicts
-            FHIRConflictsMatches.entry = FHIRConflictsMatches.entry.filter((entry) => {
+            // Auto matches hanging off a golden record other than the one this patient was just
+            // moved to are conflicts too, so both sets go through the one predicate and the
+            // entry.length test below decides on the whole result whether the conflictMatches tag
+            // comes off.
+            FHIRConflictsMatches.entry = FHIRConflictsMatches.entry.concat(FHIRAutoMatched.entry).filter((entry) => {
               let needsResolving = true;
               let link;
               if(entry.resource.link) {
@@ -217,27 +221,6 @@ router.post('/resolve-match-issue', async(req, res) => {
               }
               return needsResolving;
             });
-
-            // Auto matches hanging off a golden record other than the one this patient was just
-            // moved to are conflicts too, so they join the conflicts the filter above kept, and the
-            // entry.length test below decides on the whole set whether the conflictMatches tag
-            // comes off.
-            FHIRConflictsMatches.entry = FHIRConflictsMatches.entry.concat(FHIRAutoMatched.entry.filter((entry) => {
-              let needsResolving = true;
-              let link;
-              if(entry.resource.link) {
-                link = entry.resource.link[0].other.reference.split('/')[1];
-              }
-              if(resolvePatient.uid === link) {
-                needsResolving = false;
-              }
-              //if a potential match comes from patient selected for resolving and user decided to remove the flag then dont add this to potential matches
-              if(entry.resource.id === resolvingFrom && removeFlag) {
-                needsResolving = false;
-              }
-              return needsResolving;
-            }));
-            // end of removing any resolved potential matches
             // end of removing resolved conflicts
 
             // remove any resolved potential matches
