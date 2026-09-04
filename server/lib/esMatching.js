@@ -289,6 +289,7 @@ const performMatch = ({
   let error = false;
   let maxScore;
   let resourceID; //ID of a matched resource that has the highest score
+  let winningRule; //the first rule that auto matched; later rules cannot take resourceID off it
   const ESMatches = [];
   const FHIRPotentialMatches = {
     entry: []
@@ -333,17 +334,22 @@ const performMatch = ({
             autoHits.push(hit);
           }
 
-          // Take the highest scoring hit, considering only hits that clear their own rule's
-          // autoMatchThreshold. Scores are not comparable across rules: a deterministic rule scores
-          // one point per matching field, so a rule over more fields reaches higher scores than a
-          // narrower one, and its potential matches (potentialMatchThreshold is passed to
-          // Elasticsearch as min_score) can outscore the narrower rule's auto matches. Without the
-          // threshold check such a hit wins resourceID on its potential-only score; where it also
-          // auto matched under the narrower rule, goldenID resolves to its golden record instead
-          // and the narrower rule's auto match is reclassified as a conflict.
-          if (score >= decisionRule.autoMatchThreshold && (!maxScore || score > parseFloat(maxScore))) {
+          // Take the highest scoring hit within the first rule that auto matches. Rules are read in
+          // order, so the file states which rule decides: once one has auto matched, a later rule
+          // cannot take resourceID off it.
+          //
+          // Scores cannot arbitrate between rules. A deterministic rule scores one point per matching
+          // field, so a rule over more fields always reaches higher scores than a narrower one. A rule
+          // matching a national biometric code on its own field peaks at 1.0, and a four field
+          // demographic rule reaches 4.0 - comparing them hands every tie to the wider rule, whatever
+          // the file says about which is the stronger evidence. Only hits clearing their own rule's
+          // autoMatchThreshold are considered, so a potential match never wins.
+          if (score >= decisionRule.autoMatchThreshold
+            && (!winningRule || winningRule === decisionRule)
+            && (!maxScore || score > parseFloat(maxScore))) {
             resourceID = id;
             maxScore = score;
+            winningRule = decisionRule;
           }
         }
         ESMatches.push({
