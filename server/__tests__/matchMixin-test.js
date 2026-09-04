@@ -134,3 +134,50 @@ describe('Reprocessing patients', () => {
     expect(searchCount()).toBe(1);
   });
 });
+
+
+// A submission carrying fewer identifiers than are stored used to be merged entry by entry, which
+// overwrote the first few in place and left the rest: the iSantePlus id and the code national were
+// lost and the biometric code appeared twice. The duplicate then defeated rule 1, because buildQuery
+// joins a field's values and "HT-1 HT-1" matches nothing.
+describe('Applying a submitted patient over the stored one', () => {
+  const { applySubmittedResource } = require('../lib/mixins/matchMixin');
+
+  const stored = () => ({
+    resourceType: 'Patient',
+    id: 'b8ed988f-0000-4000-8000-000000000001',
+    gender: 'male',
+    identifier: [
+      { system: 'http://isanteplus.org/openmrs/fhir2/3-isanteplus-id', value: '1002KL' },
+      { system: 'http://isanteplus.org/openmrs/fhir2/5-code-national', value: 'DS1100N' },
+      { system: 'http://isanteplus.org/openmrs/fhir2/6-biometrics-national-reference-code', value: 'HT-90000458' },
+      { system: 'http://sedish-haiti.org/fhir/source-key', value: '75101-86' }
+    ],
+    contact: [{ name: { text: 'Ana' } }]
+  });
+  const submitted = {
+    resourceType: 'Patient',
+    identifier: [
+      { system: 'http://sedish-haiti.org/fhir/source-key', value: '75101-86' },
+      { system: 'http://isanteplus.org/openmrs/fhir2/6-biometrics-national-reference-code', value: 'HT-90000458' }
+    ]
+  };
+  const systems = (resource) => resource.identifier.map((identifier) => identifier.system);
+
+  test('takes the submitted identifiers whole rather than pairing them by position', () => {
+    expect(applySubmittedResource(stored(), submitted).identifier).toEqual(submitted.identifier);
+  });
+
+  test('leaves no identifier repeated', () => {
+    const result = applySubmittedResource(stored(), submitted);
+    expect(systems(result)).toEqual([...new Set(systems(result))]);
+  });
+
+  test('keeps arrays the submission does not carry', () => {
+    expect(applySubmittedResource(stored(), submitted).contact).toEqual([{ name: { text: 'Ana' } }]);
+  });
+
+  test('keeps scalars the submission does not carry', () => {
+    expect(applySubmittedResource(stored(), submitted).gender).toBe('male');
+  });
+});
